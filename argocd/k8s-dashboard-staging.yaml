@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-dashboard-staging
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-health-status-change.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-pod-crash-loop.email: lsaid@softnet.co.tz
+spec:
+  project: default
+  source:
+    repoURL: http://192.168.15.85/kubernetes-manifest/k8s-dashboard-manifest.git
+    targetRevision: main          # main branch = staging (image tag = build number e.g. :11)
+    path: k8s                     # folder inside the manifest repo that holds the yaml files
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8s-dashboard
+  syncPolicy:
+    automated:
+      prune: true                 # deletes resources removed from Git
+      selfHeal: true              # reverts any manual kubectl changes
+    syncOptions:
+      - CreateNamespace=true

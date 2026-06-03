@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-dashboard-uat
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-health-status-change.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-pod-crash-loop.email: lsaid@softnet.co.tz
+spec:
+  project: default
+  source:
+    repoURL: http://192.168.15.85/kubernetes-manifest/k8s-dashboard-manifest.git
+    targetRevision: uat           # uat branch = UAT builds (image tag = build number)
+    path: k8s                     # same folder — Jenkins pushes to uat branch automatically
+  destination:
+    server: https://kubernetes.default.svc   # same cluster as dev (isolated by namespace)
+    namespace: k8s-dashboard-uat
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
