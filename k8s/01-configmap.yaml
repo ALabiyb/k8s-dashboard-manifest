@@ -31,7 +31,13 @@ data:
         smtp_host: "smtp.gmail.com"
         smtp_port: 587
         smtp_username: "you@gmail.com"
-        smtp_password: "your-app-password"
+        # Real password is NOT stored here — it's injected at runtime via the
+        # SMTP_PASSWORD env var (see 01-secret.example.yaml + the env entry in
+        # 02-deployment.yaml), which config.Load() reads and overrides this
+        # placeholder with. Never put the real value in this ConfigMap: it's
+        # plaintext, world-readable to anyone with namespace `get configmap`
+        # access, and goes straight into git history.
+        smtp_password: "overridden-by-SMTP_PASSWORD-env-var"
         from: "k8s-dashboard@yourorg.com"
         to:
           - "team@yourorg.com"

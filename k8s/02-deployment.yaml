@@ -30,6 +30,46 @@ spec:
             - name: MOCK_MODE
               value: "false"
 
+            # ── Secrets (from `dashboard-secrets` — see 01-secret.example.yaml) ──
+            # Each of these is read directly by the app at startup:
+            #   DASHBOARD_SECRET          → signs/verifies session cookies (auth.go)
+            #   ADMIN_USER / ADMIN_PASS   → admin account credentials
+            #   VIEWER_USER / VIEWER_PASS → viewer account credentials
+            #   SMTP_PASSWORD             → overrides config.yaml's smtp_password (config.go)
+            # None of these have real values in this repo — they live only in
+            # the cluster Secret, created out-of-band (see the example file's
+            # header comment for the recommended GitOps-safe approach).
+            - name: DASHBOARD_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: DASHBOARD_SECRET
+            - name: ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: ADMIN_USER
+            - name: ADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: ADMIN_PASS
+            - name: VIEWER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: VIEWER_USER
+            - name: VIEWER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: VIEWER_PASS
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: SMTP_PASSWORD
+
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true

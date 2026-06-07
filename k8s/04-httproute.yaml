@@ -1,3 +1,16 @@
+# ── HTTPRoute ─────────────────────────────────────────────────────────────
+# NOTE on TLS (docs/PRODUCTION_READINESS.md §1.4): an HTTPRoute can't carry
+# TLS config — that's configured on the *Gateway* it attaches to
+# (`main-gateway` / istio-system, owned by the platform team, not this repo).
+# Today's traffic to this hostname is plain HTTP end-to-end (login POSTs and
+# the session cookie travel in cleartext on the wire).
+#
+# To fix this, the Gateway needs an HTTPS listener with TLS termination,
+# backed by a cert-manager-issued certificate — see
+# k8s/gateway-tls.example.yaml for the shape of what that looks like (a
+# reference for whoever owns `main-gateway`, not something this app applies
+# itself). Once that's live, this HTTPRoute needs no changes — Gateway API
+# routes HTTPS traffic to the same backend via the same hostname match.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
