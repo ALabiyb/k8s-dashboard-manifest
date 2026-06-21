@@ -10,6 +10,9 @@ metadata:
     app: k8s-dashboard
     app.kubernetes.io/part-of: k8s-dashboard
 data:
+  # Injected into the HTML header — change to "Production" in the prod branch.
+  APP_ENV: "Development"
+
   config.yaml: |
     server:
       port: 8081

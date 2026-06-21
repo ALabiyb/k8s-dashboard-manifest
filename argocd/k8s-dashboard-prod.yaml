@@ -15,16 +15,11 @@ spec:
     targetRevision: prod          # prod branch = production releases (image tag = version e.g. 1.2.0)
     path: k8s                     # same folder — Jenkins pushes only after human approval
   destination:
-    # ── SAME CLUSTER ────────────────────────────────────────────────────────────
-    # While using a single cluster, keep this as-is and isolate via namespace.
-    server: https://kubernetes.default.svc
-    namespace: k8s-dashboard
-    #
     # ── SEPARATE PROD CLUSTER ───────────────────────────────────────────────────
-    # When you have a dedicated prod cluster, replace the two lines above with:
-    #   server: https://<prod-cluster-api-ip>:6443
-    #   namespace: k8s-dashboard
-    # See docs/gitops-environments-guide.md for how to get the URL and register it.
+    # Register the prod cluster in ArgoCD first:
+    #   argocd cluster add <prod-context-name>
+    server: https://CHANGE_ME_PROD_CLUSTER_API_IP:6443
+    namespace: k8s-dashboard
   syncPolicy:
     automated:
       prune: true
