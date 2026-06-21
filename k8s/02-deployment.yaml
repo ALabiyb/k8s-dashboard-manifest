@@ -3,7 +3,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: k8s-dashboard
-  namespace: k8s-dashboard
   labels:
     app: k8s-dashboard
     app.kubernetes.io/part-of: k8s-dashboard
@@ -29,6 +28,13 @@ spec:
           env:
             - name: MOCK_MODE
               value: "false"
+            # Injected into the HTML header — value comes from the dashboard-config
+            # ConfigMap which differs per branch (Development on dev, Production on prod).
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: APP_ENV
 
             # ── Secrets (from `dashboard-secrets` — see 01-secret.example.yaml) ──
             # Each of these is read directly by the app at startup:
@@ -73,6 +79,8 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
             allowPrivilegeEscalation: false
             privileged: false
 
