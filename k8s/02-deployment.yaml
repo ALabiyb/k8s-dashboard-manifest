@@ -5,10 +5,25 @@ metadata:
   name: k8s-dashboard
   namespace: k8s-dashboard
   labels:
+    # Full app.kubernetes.io/* label set (k8s docs "Recommended Labels") so
+    # tools like ArgoCD, Lens, kubectl selectors, and the dashboard itself
+    # identify workloads consistently.
     app: k8s-dashboard
+    app.kubernetes.io/name: k8s-dashboard
+    app.kubernetes.io/instance: k8s-dashboard
+    app.kubernetes.io/component: dashboard
     app.kubernetes.io/part-of: k8s-dashboard
+    app.kubernetes.io/managed-by: argocd
 spec:
-  replicas: 1   # only one replica needed — it's a read-only dashboard
+  replicas: 1                # single replica — sessions live in-memory (internal/auth/session.go)
+  revisionHistoryLimit: 5    # keep last 5 ReplicaSets for rollback; default 10 is noisy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Single replica → never allow zero pods during rollout; surge to two,
+      # cut over, then retire the old one.
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: k8s-dashboard
@@ -16,25 +31,126 @@ spec:
     metadata:
       labels:
         app: k8s-dashboard
+        app.kubernetes.io/name: k8s-dashboard
+        app.kubernetes.io/component: dashboard
     spec:
-      serviceAccountName: k8s-dashboard  # use the SA with read-only RBAC
+      serviceAccountName: k8s-dashboard  # SA has read-only RBAC (see 06-clusterrole.yaml)
+      terminationGracePeriodSeconds: 30
+      # Pod-level security defaults; container-level overrides where finer
+      # control is needed. seccompProfile RuntimeDefault + non-root are the
+      # baseline Pod Security "restricted" profile expects.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
 
       containers:
         - name: dashboard
+          # Image tag is bumped by Jenkins on each dev-branch build (see
+          # k8sManifestScanAndUpdate in the shared library) — do not edit
+          # the tag by hand.
           image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:4
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Bypass the image's ENTRYPOINT — it hardcodes -config /app/config/config.yaml
+          # and ignores args. Override directly so the ConfigMap mount is read.
+          command: ["/app/k8s-dashboard"]
           args:
             - "-config=/etc/dashboard/config.yaml"
           env:
             - name: MOCK_MODE
               value: "false"
+            # Injected into the HTML header — value comes from the dashboard-config
+            # ConfigMap which differs per branch (Development on dev, Production on prod).
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: APP_ENV
 
+            # ── Secrets (from `dashboard-secrets` — see 01-secret.example.yaml) ──
+            # Each of these is read directly by the app at startup:
+            #   DASHBOARD_SECRET          → signs/verifies session cookies (auth.go)
+            #   ADMIN_USER / ADMIN_PASS   → admin account credentials
+            #   VIEWER_USER / VIEWER_PASS → viewer account credentials
+            #   SMTP_PASSWORD             → overrides config.yaml's smtp_password (config.go)
+            # None of these have real values in this repo — they live only in
+            # the cluster Secret, created out-of-band (see the example file's
+            # header comment for the recommended GitOps-safe approach).
+            - name: DASHBOARD_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: DASHBOARD_SECRET
+            - name: ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: ADMIN_USER
+            - name: ADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: ADMIN_PASS
+            - name: VIEWER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: VIEWER_USER
+            - name: VIEWER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: VIEWER_PASS
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: SMTP_PASSWORD
+            # EMBED_TOKEN → static secret that lets the TV iframe auto-login
+            # without a password prompt (see auth.HandleEmbed).
+            - name: EMBED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: EMBED_TOKEN
+            # OIDC_CLIENT_SECRET → overrides oidc.client_secret in config.yaml
+            # (which is intentionally empty there to keep the secret out of git).
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: OIDC_CLIENT_SECRET
+            # OIDC_REDIRECT_URL → per-environment override for the URL Keycloak
+            # posts the auth code back to. Set differently in dev vs. prod so
+            # the same image/ConfigMap can serve both environments unchanged.
+            #   dev  → https://k8s-dashboard.dev.softnethq.co.tz/auth/callback
+            #   prod → https://k8s-dashboard.prod.softnethq.co.tz/auth/callback
+            # Must be registered in the `k8s-dashboard` Keycloak client's
+            # Valid Redirect URIs.
+            - name: OIDC_REDIRECT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: OIDC_REDIRECT_URL
+                  optional: true
+
+          # Container-level security. Container overrides the pod defaults for
+          # readOnlyRootFilesystem (the app writes nothing to disk) and
+          # capabilities.drop:[ALL] (defense in depth — the Go binary needs
+          # nothing beyond the syscalls its stdlib makes).
           securityContext:
             readOnlyRootFilesystem: true
-            runAsNonRoot: true
             allowPrivilegeEscalation: false
             privileged: false
+            capabilities:
+              drop: ["ALL"]
 
           volumeMounts:
             - name: config
@@ -44,20 +160,51 @@ spec:
           resources:
             requests:
               cpu: "50m"
-              memory: "64Mi"
+              memory: "96Mi"
             limits:
-              cpu: "200m"
-              memory: "128Mi"
+              # Bumped from 128Mi — the K8s client-go clientset (used by the
+              # per-user token forwarder in internal/k8s/user_client.go) and
+              # the OIDC token cache push steady-state up.
+              cpu: "300m"
+              memory: "256Mi"
 
-          # Health check — k8s will restart the pod if /api/summary stops responding
+          # Three probes — see kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+          #   startupProbe   — one-shot "app finished booting". Gives the
+          #                    process a generous grace period on cold start
+          #                    (large binary + reading web/index.html + first poll).
+          #   readinessProbe — "ready to serve traffic"; drops from the Service
+          #                    endpoints when the first poll hasn't landed yet
+          #                    (see /readyz in metrics.go).
+          #   livenessProbe  — "still alive"; MUST use /healthz which is a
+          #                    liveness-only endpoint. Do NOT use /api/summary:
+          #                    it now requires an authenticated session and
+          #                    would redirect probes to /login → probe fails
+          #                    → pod restarted in a loop.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 3
+            failureThreshold: 20    # ~60s total to become healthy
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /api/summary
+              path: /healthz
               port: 8080
-            initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
 
       volumes:
         - name: config
           configMap:
             name: dashboard-config
+            items:
+              - key: config.yaml
+                path: config.yaml
