@@ -2,12 +2,12 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: k8s-dashboard-prod
-  namespace: argocd
+  namespace: devopstools
   annotations:
-    notifications.argoproj.io/subscribe.on-sync-succeeded.email: lsaid@softnet.co.tz
-    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
-    notifications.argoproj.io/subscribe.on-health-status-change.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-deployed.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-health-degraded.email: lsaid@softnet.co.tz
     notifications.argoproj.io/subscribe.on-pod-crash-loop.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
 spec:
   project: default
   source:
