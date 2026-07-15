@@ -32,4 +32,4 @@ spec:
         value: /
     backendRefs:
     - name: k8s-dashboard
-      port: 8080
+      port: 80
