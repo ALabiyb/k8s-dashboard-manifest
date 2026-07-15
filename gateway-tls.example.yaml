@@ -1,0 +1,63 @@
+# ── TLS reference (NOT applied by this app — for the Gateway owner) ───────
+#
+# `main-gateway` (namespace: istio-system) is a *shared* Gateway API resource
+# — it almost certainly routes traffic for other apps too, and is owned/
+# managed by whoever runs the cluster's ingress, not by this repo. This file
+# is a reference showing the two pieces that need to exist for
+# https://k8s-dashboard.dev.softnethq.co.tz to terminate TLS:
+#
+#   1. A cert-manager Certificate that requests/renews a cert for the hostname
+#      and stores it in a Secret.
+#   2. An HTTPS listener on the Gateway that terminates TLS using that Secret.
+#
+# Hand this file to whoever owns `main-gateway` — or, if you own it, adapt
+# and apply these two resources directly (adjust issuerRef/namespace to match
+# your cert-manager setup). Nothing in k8s-dashboard's own manifests
+# (04-httproute.yaml, etc.) needs to change once this exists: Gateway API
+# automatically routes matching-hostname HTTPS traffic to the same backend.
+#
+# ---------------------------------------------------------------------------
+
+# 1. Ask cert-manager for a certificate (requires a ClusterIssuer already
+#    configured for your CA — e.g. Let's Encrypt via ACME, or an internal CA).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: k8s-dashboard-tls
+  namespace: istio-system          # must be in the Gateway's namespace
+spec:
+  secretName: k8s-dashboard-tls    # cert-manager writes the cert+key here
+  dnsNames:
+    - k8s-dashboard.dev.softnethq.co.tz
+  issuerRef:
+    name: letsencrypt-prod         # ← replace with your actual ClusterIssuer name
+    kind: ClusterIssuer
+
+---
+# 2. Add (or extend) an HTTPS listener on the shared Gateway that terminates
+#    TLS using the Secret cert-manager just populated. This is a *patch* to
+#    the existing `main-gateway` resource — shown here as the listener entry
+#    you'd add to its `spec.listeners` list, not a standalone Gateway.
+#
+# spec:
+#   listeners:
+#     - name: https-k8s-dashboard
+#       protocol: HTTPS
+#       port: 443
+#       hostname: "k8s-dashboard.dev.softnethq.co.tz"
+#       tls:
+#         mode: Terminate
+#         certificateRefs:
+#           - name: k8s-dashboard-tls   # the Secret from step 1
+#       allowedRoutes:
+#         namespaces:
+#           from: Selector
+#           selector:
+#             matchLabels:
+#               kubernetes.io/metadata.name: k8s-dashboard
+#
+# Once both pieces are live: redirect the existing HTTP listener to HTTPS
+# (either at the Gateway via a redirect filter, or rely on HSTS once you've
+# confirmed HTTPS works end-to-end), and consider setting the `Secure` flag
+# on the `k8s_session` cookie in internal/auth/auth.go now that TLS is
+# guaranteed in front of the app.

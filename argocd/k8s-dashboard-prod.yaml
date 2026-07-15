@@ -2,12 +2,12 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: k8s-dashboard-prod
-  namespace: argocd
+  namespace: devopstools
   annotations:
-    notifications.argoproj.io/subscribe.on-sync-succeeded.email: lsaid@softnet.co.tz
-    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
-    notifications.argoproj.io/subscribe.on-health-status-change.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-deployed.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-health-degraded.email: lsaid@softnet.co.tz
     notifications.argoproj.io/subscribe.on-pod-crash-loop.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
 spec:
   project: default
   source:
@@ -15,16 +15,9 @@ spec:
     targetRevision: prod          # prod branch = production releases (image tag = version e.g. 1.2.0)
     path: k8s                     # same folder — Jenkins pushes only after human approval
   destination:
-    # ── SAME CLUSTER ────────────────────────────────────────────────────────────
-    # While using a single cluster, keep this as-is and isolate via namespace.
+    # Apply this on the prod cluster's own ArgoCD instance
     server: https://kubernetes.default.svc
     namespace: k8s-dashboard
-    #
-    # ── SEPARATE PROD CLUSTER ───────────────────────────────────────────────────
-    # When you have a dedicated prod cluster, replace the two lines above with:
-    #   server: https://<prod-cluster-api-ip>:6443
-    #   namespace: k8s-dashboard
-    # See docs/gitops-environments-guide.md for how to get the URL and register it.
   syncPolicy:
     automated:
       prune: true
