@@ -147,6 +147,9 @@ spec:
           # nothing beyond the syscalls its stdlib makes).
           securityContext:
             readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
             allowPrivilegeEscalation: false
             privileged: false
             capabilities:
