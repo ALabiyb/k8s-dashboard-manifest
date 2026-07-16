@@ -10,8 +10,13 @@ metadata:
     app: k8s-dashboard
     app.kubernetes.io/part-of: k8s-dashboard
 data:
-  # Injected into the HTML header — change to "Production" in the prod branch.
+  # Injected into the HTML header — value differs per branch.
   APP_ENV: "Development"
+
+  # Per-environment override for the Keycloak OIDC redirect URL. dev branch
+  # uses .dev. hostname; prod uses .prod. Both must be listed in the
+  # `k8s-dashboard` Keycloak client's Valid Redirect URIs.
+  OIDC_REDIRECT_URL: "https://k8s-dashboard.dev.softnethq.co.tz/auth/callback"
 
   config.yaml: |
     server:
@@ -31,9 +36,10 @@ data:
     notifications:
       email:
         enabled: true
-        smtp_host: "smtp.gmail.com"
+        smtp_host: "smtp.zoho.com"
         smtp_port: 587
-        smtp_username: "you@gmail.com"
+        # smtp_tls: true
+        smtp_username: "donotreply@softnet.co.tz"
         # Real password is NOT stored here — it's injected at runtime via the
         # SMTP_PASSWORD env var (see 01-secret.example.yaml + the env entry in
         # 02-deployment.yaml), which config.Load() reads and overrides this
@@ -41,7 +47,27 @@ data:
         # plaintext, world-readable to anyone with namespace `get configmap`
         # access, and goes straight into git history.
         smtp_password: "overridden-by-SMTP_PASSWORD-env-var"
-        from: "k8s-dashboard@yourorg.com"
+        from: "donotreply@softnet.co.tz"
         to:
-          - "team@yourorg.com"
+          - "lsaid@softnet.co.tz"
         on_state_change_only: true
+
+    # ── Keycloak / OIDC single sign-on ──────────────────────────────────
+    # Realm: SoftNet AD (unified with kubectl + Dependency-Track).
+    # See Obsidian: "K8s Dashboard OIDC RBAC Migration".
+    # Env-var overrides (see 02-deployment.yaml):
+    #   client_secret  ← OIDC_CLIENT_SECRET (Secret; required)
+    #   issuer_url     ← OIDC_ISSUER_URL   (optional override)
+    #   redirect_url   ← OIDC_REDIRECT_URL (per-env override, dev vs prod)
+    oidc:
+      enabled: true
+      issuer_url: "https://keycloak.devops.softnethq.co.tz/realms/SoftNet%20AD"
+      client_id: "k8s-dashboard"
+      client_secret: ""
+      redirect_url: "https://k8s-dashboard.dev.softnethq.co.tz/auth/callback"
+      # Keycloak group whose members become dashboard admins. Users in any
+      # other k8s-* group become viewers; K8s RBAC enforces per-namespace access.
+      admin_group: "k8s-cluster-admins"
+      # Stopgap for the internal softnethq-CA. Prefer mounting the CA into
+      # the pod (SSL_CERT_FILE env + volumeMount) and flipping this to false.
+      tls_skip_verify: true
