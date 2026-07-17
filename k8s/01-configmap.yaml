@@ -48,9 +48,18 @@ data:
         # access, and goes straight into git history.
         smtp_password: "overridden-by-SMTP_PASSWORD-env-var"
         from: "donotreply@softnet.co.tz"
+        # Display name shown by mail clients as the sender ("SoftNet K8s
+        # Dashboard <donotreply@softnet.co.tz>"). Envelope stays a bare
+        # address — Zoho rejects envelopes with display names.
+        from_display_name: "SoftNet K8s Dashboard"
         to:
           - "lsaid@softnet.co.tz"
         on_state_change_only: true
+        # Link the alert body uses in its "View dashboard" CTA. Per-env value.
+        dashboard_url: "https://k8s-dashboard.dev.softnethq.co.tz"
+        # true → styled HTML body with state-colored badges + button;
+        # false → plain text (fallback).
+        html_body: true
 
     # ── Keycloak / OIDC single sign-on ──────────────────────────────────
     # Realm: SoftNet AD (unified with kubectl + Dependency-Track).
