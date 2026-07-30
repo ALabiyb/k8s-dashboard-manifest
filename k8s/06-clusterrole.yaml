@@ -20,3 +20,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+
+  # Read ArgoCD Application CRDs so the dashboard can surface sync/health
+  # status badges per namespace. Read-only — no sync/promote actions here.
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
