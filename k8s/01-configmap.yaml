@@ -19,6 +19,9 @@ data:
   OIDC_REDIRECT_URL: "https://k8s-dashboard.dev.softnethq.co.tz/auth/callback"
 
   config.yaml: |
+    app:
+      company_name: "SoftNet Technologies"
+
     server:
       port: 8080
       poll_interval: 30s
@@ -27,7 +30,7 @@ data:
       - kube-system
       - kube-public
       - kube-node-lease
-      - k8s-dashboard
+      - default
 
     thresholds:
       healthy: 100
