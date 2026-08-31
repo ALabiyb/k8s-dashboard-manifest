@@ -36,6 +36,23 @@ spec:
     spec:
       serviceAccountName: k8s-dashboard  # SA has read-only RBAC (see 06-clusterrole.yaml)
       terminationGracePeriodSeconds: 30
+
+      # ── Control-plane scheduling ─────────────────────────────────────────
+      # The audit log is a hostPath file that only exists on control-plane nodes
+      # (written by the kube-apiserver). The pod must be co-located there.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+
       # Pod-level security defaults; container-level overrides where finer
       # control is needed. seccompProfile RuntimeDefault + non-root are the
       # baseline Pod Security "restricted" profile expects.
@@ -140,6 +157,39 @@ spec:
                   name: dashboard-config
                   key: OIDC_REDIRECT_URL
                   optional: true
+            # OIDC_SUPERADMIN_GROUP → Keycloak group whose members get the
+            # superadmin role (audit log access). Optional: if unset, only
+            # local SUPERADMIN_USER/PASS accounts can reach /api/audit.
+            - name: OIDC_SUPERADMIN_GROUP
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: OIDC_SUPERADMIN_GROUP
+                  optional: true
+
+            # ── Superadmin local account (optional) ────────────────────────
+            # Set both keys to enable a local superadmin bypass account.
+            # In production, prefer OIDC group mapping instead.
+            - name: SUPERADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: SUPERADMIN_USER
+                  optional: true
+            - name: SUPERADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: SUPERADMIN_PASS
+                  optional: true
+
+            # ── Audit log ──────────────────────────────────────────────────
+            # hostPath mount target — must match the volumeMount below.
+            # The K8s API server writes the audit log at this host path
+            # (see audit-policy.yaml in the cluster bootstrap; typical
+            # kubeadm default: /var/log/kubernetes/audit/audit.log).
+            - name: AUDIT_LOG_PATH
+              value: "/var/log/audit/audit.log"
 
           # Container-level security. Container overrides the pod defaults for
           # readOnlyRootFilesystem (the app writes nothing to disk) and
@@ -158,6 +208,11 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/dashboard
+              readOnly: true
+            # Audit log — read-only hostPath from the control-plane node.
+            # The Go handler tails only the last 3 MB so large files are safe.
+            - name: audit-log
+              mountPath: /var/log/audit
               readOnly: true
 
           resources:
@@ -211,3 +266,11 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
+        # hostPath for the K8s API server audit log.
+        # The directory (not the file) is mounted so the pod tolerates the
+        # file being rotated — the handler opens the path on each request.
+        # Change the path here if the cluster writes the log elsewhere.
+        - name: audit-log
+          hostPath:
+            path: /var/log/kubernetes/audit
+            type: DirectoryOrCreate
