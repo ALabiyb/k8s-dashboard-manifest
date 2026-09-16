@@ -6,23 +6,33 @@ kind: ClusterRole
 metadata:
   name: k8s-dashboard-reader
 rules:
-  # List and watch all namespaces so we can discover products dynamically
+  # Core namespace discovery
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list", "watch"]
 
-  # Read deployments and statefulsets to check replica health
+  # Workloads
   - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
     verbs: ["get", "list", "watch"]
-
-  # Read pods to detect CrashLoopBackOff and OOMKilled at pod level
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["pods"]
+    resources: ["pods", "pods/log"]
     verbs: ["get", "list", "watch"]
 
-  # Read ArgoCD Application CRDs so the dashboard can surface sync/health
-  # status badges per namespace. Read-only — no sync/promote actions here.
+  # Config section (Nodes, ConfigMaps, Secrets, Events)
+  - apiGroups: [""]
+    resources: ["nodes", "configmaps", "secrets", "events", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+
+  # RBAC section
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+
+  # ArgoCD Application CRDs
   - apiGroups: ["argoproj.io"]
     resources: ["applications"]
     verbs: ["get", "list", "watch"]

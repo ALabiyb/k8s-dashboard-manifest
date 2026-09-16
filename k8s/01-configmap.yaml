@@ -22,7 +22,7 @@ data:
   # Members of this group can see the full K8s API audit trail. Intentionally
   # separate from admin_group so cluster operators cannot access their own
   # audit trail — only the platform team with this Keycloak group membership can.
-  OIDC_SUPERADMIN_GROUP: "k8s-platform-admins"
+  OIDC_SUPERADMIN_GROUP: "k8s-cluster-admins"
 
   config.yaml: |
     app:
