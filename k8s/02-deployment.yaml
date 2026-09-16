@@ -52,7 +52,7 @@ spec:
           # Image tag is bumped by Jenkins on each build (see
           # k8sManifestScanAndUpdate in the shared library) — do not edit
           # the tag by hand.
-          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:main-88b5f1b
+          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:main-3649d13
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
