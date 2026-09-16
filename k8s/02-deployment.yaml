@@ -64,20 +64,6 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
-      initContainers:
-        - name: fix-audit-perms
-          image: busybox:1.36
-          command: ["sh", "-c", "chmod -R a+r /audit 2>/dev/null || true"]
-          securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: audit-log
-              mountPath: /audit
-
       containers:
         - name: dashboard
           # Image tag is bumped by Jenkins on each dev-branch build (see
@@ -272,6 +258,20 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3
+
+      initContainers:
+        - name: fix-audit-perms
+          image: busybox:1.36
+          command: ["sh", "-c", "chmod -R a+r /audit 2>/dev/null || true"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: audit-log
+              mountPath: /audit
 
       volumes:
         - name: config
