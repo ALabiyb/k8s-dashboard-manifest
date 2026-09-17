@@ -118,6 +118,9 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
+            # Override the Dockerfile's USER 65532 — audit.log is mode 600 root:root.
+            runAsUser: 0
+            runAsGroup: 0
             capabilities:
               drop: ["ALL"]
 
