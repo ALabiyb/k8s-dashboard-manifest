@@ -1,0 +1,10 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    app.kubernetes.io/part-of: audit-collector
