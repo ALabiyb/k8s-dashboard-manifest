@@ -1,0 +1,130 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+#
+# DaemonSet: one collector pod per control-plane node.
+# Auto-scales as masters are added — no manual changes needed.
+#
+# Prerequisites:
+#   kubectl apply -f 00-namespace.yaml
+#   kubectl -n logging create secret generic audit-collector-db \
+#     --from-literal=url='postgres://audituser:PASS@host:5432/db?sslmode=require'
+#
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: k8s-audit-collector
+  namespace: logging
+  labels:
+    app: k8s-audit-collector
+    app.kubernetes.io/name: k8s-audit-collector
+    app.kubernetes.io/component: collector
+    app.kubernetes.io/part-of: audit-collector
+    app.kubernetes.io/managed-by: argocd
+spec:
+  selector:
+    matchLabels:
+      app: k8s-audit-collector
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: k8s-audit-collector
+        app.kubernetes.io/name: k8s-audit-collector
+        app.kubernetes.io/component: collector
+    spec:
+      # ── Land only on control-plane nodes ─────────────────────────────────
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+
+      # ── Security ──────────────────────────────────────────────────────────
+      # Runs as root: audit.log is mode 600 root:root on the host.
+      # The pod is read-only except for its single hostPath volume.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: collector
+          image: harbor.devops.softnethq.co.tz/library/k8s-audit-collector:latest
+          imagePullPolicy: Always
+
+          env:
+            # Downward API: which master is this pod on?
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+            # Postgres connection string from secret.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: audit-collector-db
+                  key: url
+
+            # Set to "false" to collect all users (including system accounts).
+            - name: FILTER_HUMANS_ONLY
+              value: "true"
+
+            # Tune batching if needed (defaults: 100 rows / 2s).
+            # - name: BATCH_SIZE
+            #   value: "100"
+            # - name: BATCH_INTERVAL
+            #   value: "2s"
+
+          ports:
+            - name: healthz
+              containerPort: 8080
+              protocol: TCP
+
+          volumeMounts:
+            - name: audit-log
+              mountPath: /var/log/kubernetes/audit
+              readOnly: true
+
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+
+      volumes:
+        - name: audit-log
+          hostPath:
+            path: /var/log/kubernetes/audit
+            type: Directory
+
+      terminationGracePeriodSeconds: 15

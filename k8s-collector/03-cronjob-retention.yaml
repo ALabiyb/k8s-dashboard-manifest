@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+#
+# CronJob: delete audit rows older than 90 days to keep the table bounded.
+# Runs daily at 02:00 UTC. Adjust RETENTION_DAYS if needed.
+#
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-retention
+  namespace: logging
+  labels:
+    app: audit-retention
+    app.kubernetes.io/part-of: audit-collector
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: psql
+              image: postgres:16-alpine
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: audit-collector-db
+                      key: url
+                - name: RETENTION_DAYS
+                  value: "90"
+              command:
+                - sh
+                - -c
+                - |
+                  psql "$DATABASE_URL" -c \
+                    "DELETE FROM k8s_audit WHERE event_time < now() - make_interval(days => $RETENTION_DAYS::int);" \
+                    -c "SELECT count(*) AS remaining_rows FROM k8s_audit;"
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "10m"
+                limits:
+                  memory: "64Mi"
+                  cpu: "100m"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 70
+                capabilities:
+                  drop: ["ALL"]
