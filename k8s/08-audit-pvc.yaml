@@ -1,0 +1,27 @@
+# ── Audit Log PVC ─────────────────────────────────────────────────────────
+# Persistent storage for the audit log written by the webhook receiver
+# (POST /api/audit/events). Both kube-apiservers POST events here so the
+# full audit trail from all control-plane nodes is aggregated in one place.
+#
+# StorageClass: rook-ceph-block (ReadWriteOnce) — the dashboard runs as a
+# single replica so RWO is sufficient and no CephFS setup is required.
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-log-storage
+  namespace: k8s-dashboard
+  labels:
+    app: k8s-dashboard
+    app.kubernetes.io/part-of: k8s-dashboard
+    app.kubernetes.io/component: audit-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi

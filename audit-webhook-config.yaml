@@ -1,0 +1,41 @@
+# ── kube-apiserver Audit Webhook Config ───────────────────────────────────
+# Copy this file to BOTH masters:
+#   sudo cp audit-webhook-config.yaml /etc/kubernetes/audit/webhook.yaml
+#
+# Then add these flags to /etc/kubernetes/manifests/kube-apiserver.yaml:
+#   - --audit-webhook-config-file=/etc/kubernetes/audit/webhook.yaml
+#   - --audit-webhook-mode=batch
+#   - --audit-webhook-batch-max-size=100
+#   - --audit-webhook-batch-max-wait=5s
+#   - --audit-webhook-initial-backoff=10s
+#
+# Finally restart the static pod on each master:
+#   sudo touch /etc/kubernetes/manifests/kube-apiserver.yaml
+#
+# Note: the server URL uses the ClusterIP of the k8s-dashboard Service.
+# If you set AUDIT_WEBHOOK_TOKEN in the dashboard-secrets Secret, add the
+# token under `users[0].user.token` below.
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Config
+clusters:
+  - name: k8s-dashboard-audit
+    cluster:
+      # Use the ClusterIP of the k8s-dashboard Service (port 80 → 8080).
+      # Retrieve it: kubectl get svc k8s-dashboard -n k8s-dashboard -o jsonpath='{.spec.clusterIP}'
+      server: http://REPLACE_WITH_CLUSTERIP/api/audit/events
+users:
+  - name: ""
+    user: {}
+    # If AUDIT_WEBHOOK_TOKEN is set, uncomment and fill in:
+    # user:
+    #   token: "your-token-here"
+contexts:
+  - name: webhook
+    context:
+      cluster: k8s-dashboard-audit
+      user: ""
+current-context: webhook

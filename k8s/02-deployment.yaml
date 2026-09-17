@@ -36,23 +36,6 @@ spec:
     spec:
       serviceAccountName: k8s-dashboard  # SA has read-only RBAC (see 06-clusterrole.yaml)
       terminationGracePeriodSeconds: 30
-
-      # ── Control-plane scheduling ─────────────────────────────────────────
-      # The audit log is a hostPath file that only exists on control-plane nodes
-      # (written by the kube-apiserver). The pod must be co-located there.
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
-
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: Exists
-
       # Pod-level security defaults; container-level overrides where finer
       # control is needed. seccompProfile RuntimeDefault + non-root are the
       # baseline Pod Security "restricted" profile expects.
@@ -184,12 +167,21 @@ spec:
                   optional: true
 
             # ── Audit log ──────────────────────────────────────────────────
-            # hostPath mount target — must match the volumeMount below.
-            # The K8s API server writes the audit log at this host path
-            # (see audit-policy.yaml in the cluster bootstrap; typical
-            # kubeadm default: /var/log/kubernetes/audit/audit.log).
+            # Path where the webhook receiver writes aggregated audit events from
+            # both kube-apiservers. Lives on the RBD PVC (audit-log-storage) so
+            # the log survives pod restarts and is writable regardless of which
+            # node the pod lands on.
             - name: AUDIT_LOG_PATH
-              value: "/var/log/audit/audit.log"
+              value: /var/log/audit/audit.log
+            # Optional: set a secret token that kube-apiserver webhook configs
+            # must present as Authorization: Bearer <token>. Leave empty to
+            # skip token validation (cluster-internal access still limits reach).
+            - name: AUDIT_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-secrets
+                  key: AUDIT_WEBHOOK_TOKEN
+                  optional: true
 
           # Container-level security. Container overrides the pod defaults for
           # readOnlyRootFilesystem (the app writes nothing to disk) and
@@ -209,11 +201,8 @@ spec:
             - name: config
               mountPath: /etc/dashboard
               readOnly: true
-            # Audit log — read-only hostPath from the control-plane node.
-            # The Go handler tails only the last 3 MB so large files are safe.
-            - name: audit-log
+            - name: audit-log-storage
               mountPath: /var/log/audit
-              readOnly: true
 
           resources:
             requests:
@@ -259,20 +248,6 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
 
-      initContainers:
-        - name: fix-audit-perms
-          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:dev-a722dde
-          command: ["sh", "-c", "chmod -R a+r /audit 2>/dev/null || true"]
-          securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: audit-log
-              mountPath: /audit
-
       volumes:
         - name: config
           configMap:
@@ -280,11 +255,6 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
-        # hostPath for the K8s API server audit log.
-        # The directory (not the file) is mounted so the pod tolerates the
-        # file being rotated — the handler opens the path on each request.
-        # Change the path here if the cluster writes the log elsewhere.
-        - name: audit-log
-          hostPath:
-            path: /var/log/kubernetes/audit
-            type: DirectoryOrCreate
+        - name: audit-log-storage
+          persistentVolumeClaim:
+            claimName: audit-log-storage
