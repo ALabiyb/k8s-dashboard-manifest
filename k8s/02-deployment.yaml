@@ -69,7 +69,7 @@ spec:
           # Image tag is bumped by Jenkins on each dev-branch build (see
           # k8sManifestScanAndUpdate in the shared library) — do not edit
           # the tag by hand.
-          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:dev-7c78c6a
+          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:dev-8cb7c74
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -261,7 +261,7 @@ spec:
 
       initContainers:
         - name: fix-audit-perms
-          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:dev-7c78c6a
+          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:dev-8cb7c74
           command: ["sh", "-c", "chmod -R a+r /audit 2>/dev/null || true"]
           securityContext:
             runAsUser: 0
