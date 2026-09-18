@@ -16,6 +16,9 @@ kind: DaemonSet
 metadata:
   name: k8s-audit-collector
   namespace: logging
+  annotations:
+    # audit.log is mode 600 root:root on every control-plane node — no alternative to UID 0.
+    policy.softnet.io/exempt-root: "audit.log is mode 600 root:root on the host"
   labels:
     app: k8s-audit-collector
     app.kubernetes.io/name: k8s-audit-collector
@@ -118,6 +121,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
+            readOnlyRootFilesystem: true
             # Override the Dockerfile's USER 65532 — audit.log is mode 600 root:root.
             runAsUser: 0
             runAsGroup: 0
