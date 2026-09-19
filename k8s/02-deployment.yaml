@@ -20,8 +20,6 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # Single replica → never allow zero pods during rollout; surge to two,
-      # cut over, then retire the old one.
       maxUnavailable: 0
       maxSurge: 1
   selector:
@@ -36,6 +34,14 @@ spec:
     spec:
       serviceAccountName: k8s-dashboard  # SA has read-only RBAC (see 06-clusterrole.yaml)
       terminationGracePeriodSeconds: 30
+      # Pin to control-plane nodes — same tier as kube-apiserver so webhook
+      # events arrive in-process without crossing node boundaries.
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       # Pod-level security defaults; container-level overrides where finer
       # control is needed. seccompProfile RuntimeDefault + non-root are the
       # baseline Pod Security "restricted" profile expects.
@@ -166,11 +172,9 @@ spec:
                   key: SUPERADMIN_PASS
                   optional: true
 
-            # ── Audit log ──────────────────────────────────────────────────
-            # Path where the webhook receiver writes aggregated audit events from
-            # both kube-apiservers. Lives on the RBD PVC (audit-log-storage) so
-            # the log survives pod restarts and is writable regardless of which
-            # node the pod lands on.
+            # Webhook receiver writes here; emptyDir keeps it writable without
+            # a RWO PVC. GET /api/audit reads from PostgreSQL (AUDIT_DB_URL)
+            # so this file is only a short-lived local cache.
             - name: AUDIT_LOG_PATH
               value: /var/log/audit/audit.log
             # Optional: set a secret token that kube-apiserver webhook configs
@@ -182,6 +186,14 @@ spec:
                   name: dashboard-secrets
                   key: AUDIT_WEBHOOK_TOKEN
                   optional: true
+            # PostgreSQL connection string for the audit table written by
+            # k8s-audit-collector. When set, GET /api/audit queries the DB
+            # instead of the local file, giving multi-node coverage.
+            - name: AUDIT_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: audit-collector-db
+                  key: url
 
           # Container-level security. Container overrides the pod defaults for
           # readOnlyRootFilesystem (the app writes nothing to disk) and
@@ -256,5 +268,4 @@ spec:
               - key: config.yaml
                 path: config.yaml
         - name: audit-log-storage
-          persistentVolumeClaim:
-            claimName: audit-log-storage
+          emptyDir: {}   # ephemeral — primary audit source is PostgreSQL via AUDIT_DB_URL
