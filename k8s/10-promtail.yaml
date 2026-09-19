@@ -116,7 +116,8 @@ spec:
           operator: Exists
           effect:   NoSchedule
       securityContext:
-        runAsGroup: 0       # needs to read /var/log/pods (root-owned on most distros)
+        runAsUser:  0
+        runAsGroup: 0
         seccompProfile:
           type: RuntimeDefault
       containers:
