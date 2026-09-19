@@ -116,7 +116,7 @@ spec:
           operator: Exists
           effect:   NoSchedule
       securityContext:
-        runAsUser:  0
+        runAsUser:  0       # needs root to read /var/log/pods (mode 700, root-owned)
         runAsGroup: 0
         seccompProfile:
           type: RuntimeDefault
@@ -142,6 +142,8 @@ spec:
             - name: config
               mountPath: /etc/promtail
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
             - name: pods-logs
               mountPath: /var/log/pods
               readOnly: true
@@ -165,6 +167,8 @@ spec:
         - name: config
           configMap:
             name: promtail-config
+        - name: tmp
+          emptyDir: {}
         - name: pods-logs
           hostPath:
             path: /var/log/pods

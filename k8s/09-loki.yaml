@@ -67,19 +67,6 @@ data:
             period: 24h
 
 ---
-# ── Persistent volume for log chunks ─────────────────────────────────────────
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: loki-data
-  namespace: k8s-dashboard
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 10Gi
-
----
 # ── Loki Deployment ───────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
@@ -162,8 +149,7 @@ spec:
           configMap:
             name: loki-config
         - name: data
-          persistentVolumeClaim:
-            claimName: loki-data
+          emptyDir: {}   # dev: no Ceph RBD on test-master-2; logs reset on pod restart
 
 ---
 # ── ClusterIP Service ─────────────────────────────────────────────────────────
