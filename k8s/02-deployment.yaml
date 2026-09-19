@@ -18,12 +18,11 @@ spec:
   replicas: 1                # single replica — sessions live in-memory (internal/auth/session.go)
   revisionHistoryLimit: 5    # keep last 5 ReplicaSets for rollback; default 10 is noisy
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      # Single replica → never allow zero pods during rollout; surge to two,
-      # cut over, then retire the old one.
-      maxUnavailable: 0
-      maxSurge: 1
+    # Recreate: terminate the old pod before starting the new one.
+    # Required because audit-log-storage is RWO (Ceph RBD) — only one node
+    # can attach it at a time. RollingUpdate with maxSurge:1 causes
+    # FailedAttachVolume when the new pod lands on a different node.
+    type: Recreate
   selector:
     matchLabels:
       app: k8s-dashboard
