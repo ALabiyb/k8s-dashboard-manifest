@@ -51,10 +51,11 @@ data:
       retention_period:           168h   # 7 days
 
     compactor:
-      working_directory:    /loki/compactor
-      compaction_interval:  10m
-      retention_enabled:    true
+      working_directory:      /loki/compactor
+      compaction_interval:    10m
+      retention_enabled:      true
       retention_delete_delay: 2h
+      delete_request_store:   filesystem   # required by Loki 3.x when retention_enabled: true
 
     schema_config:
       configs:
