@@ -7,15 +7,17 @@
 # Auto-scales as masters are added — no manual changes needed.
 #
 # Prerequisites:
-#   kubectl apply -f 00-namespace.yaml
-#   kubectl -n logging create secret generic audit-collector-db \
+#   kubectl -n k8s-dashboard create secret generic audit-collector-db \
 #     --from-literal=url='postgres://audituser:PASS@host:5432/db?sslmode=require'
 #
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: k8s-audit-collector
-  namespace: logging
+  namespace: k8s-dashboard
+  annotations:
+    # audit.log is mode 600 root:root on every control-plane node — no alternative to UID 0.
+    policy.softnet.io/exempt-root: "audit.log is mode 600 root:root on the host"
   labels:
     app: k8s-audit-collector
     app.kubernetes.io/name: k8s-audit-collector
@@ -52,7 +54,7 @@ spec:
 
       containers:
         - name: collector
-          image: harbor.devops.softnethq.co.tz/library/k8s-audit-collector:latest
+          image: harbor.devops.softnethq.co.tz/library/k8s-audit-collector:main-761d7fa
           imagePullPolicy: Always
 
           env:
@@ -118,6 +120,10 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
+            readOnlyRootFilesystem: true
+            # Override the Dockerfile's USER 65532 — audit.log is mode 600 root:root.
+            runAsUser: 0
+            runAsGroup: 0
             capabilities:
               drop: ["ALL"]
 
