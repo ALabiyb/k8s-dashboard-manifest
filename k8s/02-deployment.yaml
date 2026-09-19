@@ -194,6 +194,11 @@ spec:
                 secretKeyRef:
                   name: audit-collector-db
                   key: url
+            # Loki base URL — enables the Logs page (GET /api/logs/*).
+            # Points to the Loki Service deployed in the same namespace.
+            # Leave unset (or remove) to disable the Logs page entirely.
+            - name: LOKI_URL
+              value: "http://loki.k8s-dashboard.svc.cluster.local:3100"
 
           # Container-level security. Container overrides the pod defaults for
           # readOnlyRootFilesystem (the app writes nothing to disk) and

@@ -1,0 +1,172 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Promtail DaemonSet — runs on every node, tails /var/log/pods/**/*.log,
+# and ships entries to the Loki instance in the k8s-dashboard namespace.
+# Labels attached per log line: namespace, pod, container (plus any k8s
+# pod labels matching __meta_kubernetes_pod_label_*).
+# ---------------------------------------------------------------------------
+
+# ── RBAC for Promtail ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: promtail
+  namespace: k8s-dashboard
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: promtail
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/proxy, services, endpoints, pods]
+    verbs:     [get, watch, list]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: promtail
+subjects:
+  - kind:      ServiceAccount
+    name:      promtail
+    namespace: k8s-dashboard
+roleRef:
+  kind:     ClusterRole
+  name:     promtail
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ── Promtail configuration ───────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: k8s-dashboard
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+      log_level: warn
+
+    positions:
+      filename: /tmp/positions.yaml
+
+    clients:
+      - url: http://loki.k8s-dashboard.svc.cluster.local:3100/loki/api/v1/push
+
+    scrape_configs:
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          - cri: {}
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Use the node the pod runs on as the host label.
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label:  __host__
+          # Carry through all k8s pod labels as Loki stream labels.
+          - action: labelmap
+            regex:  __meta_kubernetes_pod_label_(.+)
+          # Standard labels the dashboard Logs page filters on.
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label:  namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label:  pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label:  container
+          # Resolve the log file path from uid + container name.
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            separator:    /
+            target_label: __path__
+            replacement:  /var/log/pods/*$1*/*/*.log
+
+---
+# ── Promtail DaemonSet ───────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: k8s-dashboard
+  labels:
+    app: promtail
+    app.kubernetes.io/name:      promtail
+    app.kubernetes.io/component: log-collector
+    app.kubernetes.io/part-of:   k8s-dashboard
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: promtail
+        app.kubernetes.io/name: promtail
+    spec:
+      serviceAccountName: promtail
+      # Must run on all nodes (including control-plane) to collect logs there.
+      tolerations:
+        - key:      node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect:   NoSchedule
+      securityContext:
+        runAsGroup: 0       # needs to read /var/log/pods (root-owned on most distros)
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: promtail
+          image: grafana/promtail:3.5.1
+          imagePullPolicy: IfNotPresent
+          args: ["-config.file=/etc/promtail/promtail.yaml"]
+          ports:
+            - name: http
+              containerPort: 9080
+          securityContext:
+            readOnlyRootFilesystem:   true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail
+              readOnly: true
+            - name: pods-logs
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: docker-logs
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+          resources:
+            requests:
+              cpu:    "25m"
+              memory: "64Mi"
+            limits:
+              cpu:    "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: promtail-config
+        - name: pods-logs
+          hostPath:
+            path: /var/log/pods
+        - name: docker-logs
+          hostPath:
+            path: /var/lib/docker/containers

@@ -1,0 +1,183 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Loki — single-binary log aggregation backend for the dashboard Logs page.
+# Deployed in the same namespace as the dashboard (k8s-dashboard) so the
+# dashboard can reach it at http://loki.k8s-dashboard.svc.cluster.local:3100
+# without leaving the cluster network.
+#
+# Storage: 10Gi PVC (local filesystem, single-binary mode).
+# Retention: 7 days (configured in loki-config ConfigMap below).
+# ---------------------------------------------------------------------------
+
+# ── Loki configuration ───────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: k8s-dashboard
+data:
+  loki.yaml: |
+    auth_enabled: false
+
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+      log_level: warn
+
+    common:
+      instance_addr: 127.0.0.1
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory:  /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+
+    query_range:
+      results_cache:
+        cache:
+          embedded_cache:
+            enabled: true
+            max_size_mb: 100
+
+    limits_config:
+      reject_old_samples:         true
+      reject_old_samples_max_age: 168h
+      retention_period:           168h   # 7 days
+
+    compactor:
+      working_directory:    /loki/compactor
+      compaction_interval:  10m
+      retention_enabled:    true
+      retention_delete_delay: 2h
+
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store:        tsdb
+          object_store: filesystem
+          schema:       v13
+          index:
+            prefix: index_
+            period: 24h
+
+---
+# ── Persistent volume for log chunks ─────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-data
+  namespace: k8s-dashboard
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# ── Loki Deployment ───────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: k8s-dashboard
+  labels:
+    app: loki
+    app.kubernetes.io/name:      loki
+    app.kubernetes.io/component: log-store
+    app.kubernetes.io/part-of:   k8s-dashboard
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+        app.kubernetes.io/name: loki
+    spec:
+      serviceAccountName: k8s-dashboard
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser:  10001
+        runAsGroup: 10001
+        fsGroup:    10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: loki
+          image: grafana/loki:3.5.1
+          imagePullPolicy: IfNotPresent
+          args: ["-config.file=/etc/loki/loki.yaml"]
+          ports:
+            - name: http
+              containerPort: 3100
+            - name: grpc
+              containerPort: 9096
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+              readOnly: true
+            - name: data
+              mountPath: /loki
+          resources:
+            requests:
+              cpu:    "50m"
+              memory: "128Mi"
+            limits:
+              cpu:    "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3100
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 3100
+            initialDelaySeconds: 45
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: loki-data
+
+---
+# ── ClusterIP Service ─────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: k8s-dashboard
+  labels:
+    app: loki
+spec:
+  selector:
+    app: loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
