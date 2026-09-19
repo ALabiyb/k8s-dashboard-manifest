@@ -18,11 +18,10 @@ spec:
   replicas: 1                # single replica — sessions live in-memory (internal/auth/session.go)
   revisionHistoryLimit: 5    # keep last 5 ReplicaSets for rollback; default 10 is noisy
   strategy:
-    # Recreate: terminate the old pod before starting the new one.
-    # Required because audit-log-storage is RWO (Ceph RBD) — only one node
-    # can attach it at a time. RollingUpdate with maxSurge:1 causes
-    # FailedAttachVolume when the new pod lands on a different node.
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: k8s-dashboard
@@ -35,6 +34,14 @@ spec:
     spec:
       serviceAccountName: k8s-dashboard  # SA has read-only RBAC (see 06-clusterrole.yaml)
       terminationGracePeriodSeconds: 30
+      # Pin to control-plane nodes — same tier as kube-apiserver so webhook
+      # events arrive in-process without crossing node boundaries.
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       # Pod-level security defaults; container-level overrides where finer
       # control is needed. seccompProfile RuntimeDefault + non-root are the
       # baseline Pod Security "restricted" profile expects.
@@ -139,10 +146,9 @@ spec:
                   name: dashboard-config
                   key: OIDC_REDIRECT_URL
                   optional: true
-            # Path where the webhook receiver writes aggregated audit events from
-            # both kube-apiservers. Lives on the RBD PVC (audit-log-storage) so
-            # the log survives pod restarts and is writable regardless of which
-            # node the pod lands on.
+            # Webhook receiver writes here; emptyDir keeps it writable without
+            # a RWO PVC. GET /api/audit reads from PostgreSQL (AUDIT_DB_URL)
+            # so this file is only a short-lived local cache.
             - name: AUDIT_LOG_PATH
               value: /var/log/audit/audit.log
             # Optional: set a secret token that kube-apiserver webhook configs
@@ -236,5 +242,4 @@ spec:
               - key: config.yaml
                 path: config.yaml
         - name: audit-log-storage
-          persistentVolumeClaim:
-            claimName: audit-log-storage
+          emptyDir: {}   # ephemeral — primary audit source is PostgreSQL via AUDIT_DB_URL
