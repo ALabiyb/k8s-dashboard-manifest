@@ -10,7 +10,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: audit-retention
-  namespace: logging
+  namespace: k8s-dashboard
   labels:
     app: audit-retention
     app.kubernetes.io/part-of: audit-collector
