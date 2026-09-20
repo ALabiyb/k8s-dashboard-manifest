@@ -55,10 +55,10 @@ spec:
 
       containers:
         - name: dashboard
-          # Image tag is bumped by Jenkins on each dev-branch build (see
+          # Image tag is bumped by Jenkins on each build (see
           # k8sManifestScanAndUpdate in the shared library) — do not edit
           # the tag by hand.
-          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:main-a3406a1
+          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:main-2a98e54
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -146,32 +146,6 @@ spec:
                   name: dashboard-config
                   key: OIDC_REDIRECT_URL
                   optional: true
-            # OIDC_SUPERADMIN_GROUP → Keycloak group whose members get the
-            # superadmin role (audit log access). Optional: if unset, only
-            # local SUPERADMIN_USER/PASS accounts can reach /api/audit.
-            - name: OIDC_SUPERADMIN_GROUP
-              valueFrom:
-                configMapKeyRef:
-                  name: dashboard-config
-                  key: OIDC_SUPERADMIN_GROUP
-                  optional: true
-
-            # ── Superadmin local account (optional) ────────────────────────
-            # Set both keys to enable a local superadmin bypass account.
-            # In production, prefer OIDC group mapping instead.
-            - name: SUPERADMIN_USER
-              valueFrom:
-                secretKeyRef:
-                  name: dashboard-secrets
-                  key: SUPERADMIN_USER
-                  optional: true
-            - name: SUPERADMIN_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: dashboard-secrets
-                  key: SUPERADMIN_PASS
-                  optional: true
-
             # Webhook receiver writes here; emptyDir keeps it writable without
             # a RWO PVC. GET /api/audit reads from PostgreSQL (AUDIT_DB_URL)
             # so this file is only a short-lived local cache.
