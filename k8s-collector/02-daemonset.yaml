@@ -54,7 +54,7 @@ spec:
 
       containers:
         - name: collector
-          image: harbor.devops.softnethq.co.tz/library/k8s-audit-collector:dev-27a1b79
+          image: harbor.devops.softnethq.co.tz/library/k8s-audit-collector:dev-03f0dc6
           imagePullPolicy: Always
 
           env:
