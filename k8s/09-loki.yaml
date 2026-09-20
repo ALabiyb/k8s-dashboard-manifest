@@ -7,7 +7,10 @@
 # dashboard can reach it at http://loki.k8s-dashboard.svc.cluster.local:3100
 # without leaving the cluster network.
 #
-# Storage: 10Gi PVC (local filesystem, single-binary mode).
+# Storage: 10Gi RBD PVC (local filesystem, single-binary mode).
+# Node: any worker node — master nodes have 0 CSI drivers (Ceph RBD node plugin
+#       DaemonSet doesn't tolerate control-plane taint), so Loki must NOT be
+#       pinned to the control-plane or PVC attach fails.
 # Retention: 7 days (configured in loki-config ConfigMap below).
 # ---------------------------------------------------------------------------
 
@@ -68,6 +71,20 @@ data:
             period: 24h
 
 ---
+# ── Persistent volume for log chunks ─────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-data
+  namespace: k8s-dashboard
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 10Gi
+
+---
 # ── Loki Deployment ───────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
@@ -92,12 +109,8 @@ spec:
         app.kubernetes.io/name: loki
     spec:
       serviceAccountName: k8s-dashboard
-      nodeSelector:
-        node-role.kubernetes.io/control-plane: ""
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
+      # No nodeSelector — Loki must land on a worker node where the Ceph RBD
+      # CSI node plugin runs. Master nodes have 0 CSI drivers registered.
       securityContext:
         runAsNonRoot: true
         runAsUser:  10001
@@ -150,7 +163,8 @@ spec:
           configMap:
             name: loki-config
         - name: data
-          emptyDir: {}   # dev: no Ceph RBD on test-master-2; logs reset on pod restart
+          persistentVolumeClaim:
+            claimName: loki-data
 
 ---
 # ── ClusterIP Service ─────────────────────────────────────────────────────────
