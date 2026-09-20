@@ -12,3 +12,21 @@ roleRef:
   kind: ClusterRole
   name: k8s-dashboard-reader
   apiGroup: rbac.authorization.k8s.io
+
+---
+# Grants platform admins (k8s-platform-admins Keycloak group) the same
+# read-only cluster view as the dashboard ServiceAccount. Their OIDC token
+# is used for direct K8s API calls, so this binding is required in addition
+# to the dashboard role mapping.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-platform-admins-dashboard-reader
+subjects:
+  - kind: Group
+    name: k8s-platform-admins
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: k8s-dashboard-reader
+  apiGroup: rbac.authorization.k8s.io
