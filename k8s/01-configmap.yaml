@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/part-of: k8s-dashboard
 data:
   # Injected into the HTML header — value differs per branch.
-  APP_ENV: "Development"
+  APP_ENV: "Development Cluster"
 
   # Per-environment override for the Keycloak OIDC redirect URL. dev branch
   # uses .dev. hostname; prod uses .prod. Both must be listed in the
