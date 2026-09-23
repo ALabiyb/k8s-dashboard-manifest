@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/part-of: k8s-dashboard
 data:
   # Injected into the HTML header — value differs per branch.
-  APP_ENV: "Development"
+  APP_ENV: "Development Cluster"
 
   # Per-environment override for the Keycloak OIDC redirect URL. dev branch
   # uses .dev. hostname; prod uses .prod. Both must be listed in the
@@ -22,7 +22,7 @@ data:
   # Members of this group can see the full K8s API audit trail. Intentionally
   # separate from admin_group so cluster operators cannot access their own
   # audit trail — only the platform team with this Keycloak group membership can.
-  OIDC_SUPERADMIN_GROUP: "k8s-cluster-admins"
+  OIDC_SUPERADMIN_GROUP: "k8s-platform-admins"
 
   config.yaml: |
     app:
@@ -86,6 +86,10 @@ data:
       # Keycloak group whose members become dashboard admins. Users in any
       # other k8s-* group become viewers; K8s RBAC enforces per-namespace access.
       admin_group: "k8s-cluster-admins"
+      # Keycloak group whose members become platform superadmins with audit-log
+      # access. Separate from admin_group so cluster operators cannot read their
+      # own audit trail.
+      superadmin_group: "k8s-platform-admins"
       # Stopgap for the internal softnethq-CA. Prefer mounting the CA into
       # the pod (SSL_CERT_FILE env + volumeMount) and flipping this to false.
       tls_skip_verify: true

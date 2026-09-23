@@ -20,8 +20,6 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # Single replica → never allow zero pods during rollout; surge to two,
-      # cut over, then retire the old one.
       maxUnavailable: 0
       maxSurge: 1
   selector:
@@ -36,6 +34,14 @@ spec:
     spec:
       serviceAccountName: k8s-dashboard  # SA has read-only RBAC (see 06-clusterrole.yaml)
       terminationGracePeriodSeconds: 30
+      # Pin to control-plane nodes — same tier as kube-apiserver so webhook
+      # events arrive in-process without crossing node boundaries.
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       # Pod-level security defaults; container-level overrides where finer
       # control is needed. seccompProfile RuntimeDefault + non-root are the
       # baseline Pod Security "restricted" profile expects.
@@ -49,10 +55,10 @@ spec:
 
       containers:
         - name: dashboard
-          # Image tag is bumped by Jenkins on each dev-branch build (see
+          # Image tag is bumped by Jenkins on each build (see
           # k8sManifestScanAndUpdate in the shared library) — do not edit
           # the tag by hand.
-          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:main-a3406a1
+          image: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard:dev-3f292ad
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -140,37 +146,9 @@ spec:
                   name: dashboard-config
                   key: OIDC_REDIRECT_URL
                   optional: true
-            # OIDC_SUPERADMIN_GROUP → Keycloak group whose members get the
-            # superadmin role (audit log access). Optional: if unset, only
-            # local SUPERADMIN_USER/PASS accounts can reach /api/audit.
-            - name: OIDC_SUPERADMIN_GROUP
-              valueFrom:
-                configMapKeyRef:
-                  name: dashboard-config
-                  key: OIDC_SUPERADMIN_GROUP
-                  optional: true
-
-            # ── Superadmin local account (optional) ────────────────────────
-            # Set both keys to enable a local superadmin bypass account.
-            # In production, prefer OIDC group mapping instead.
-            - name: SUPERADMIN_USER
-              valueFrom:
-                secretKeyRef:
-                  name: dashboard-secrets
-                  key: SUPERADMIN_USER
-                  optional: true
-            - name: SUPERADMIN_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: dashboard-secrets
-                  key: SUPERADMIN_PASS
-                  optional: true
-
-            # ── Audit log ──────────────────────────────────────────────────
-            # Path where the webhook receiver writes aggregated audit events from
-            # both kube-apiservers. Lives on the RBD PVC (audit-log-storage) so
-            # the log survives pod restarts and is writable regardless of which
-            # node the pod lands on.
+            # Webhook receiver writes here; emptyDir keeps it writable without
+            # a RWO PVC. GET /api/audit reads from PostgreSQL (AUDIT_DB_URL)
+            # so this file is only a short-lived local cache.
             - name: AUDIT_LOG_PATH
               value: /var/log/audit/audit.log
             # Optional: set a secret token that kube-apiserver webhook configs
@@ -182,6 +160,19 @@ spec:
                   name: dashboard-secrets
                   key: AUDIT_WEBHOOK_TOKEN
                   optional: true
+            # PostgreSQL connection string for the audit table written by
+            # k8s-audit-collector. When set, GET /api/audit queries the DB
+            # instead of the local file, giving multi-node coverage.
+            - name: AUDIT_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: audit-collector-db
+                  key: url
+            # Loki base URL — enables the Logs page (GET /api/logs/*).
+            # Points to the Loki Service deployed in the same namespace.
+            # Leave unset (or remove) to disable the Logs page entirely.
+            - name: LOKI_URL
+              value: "http://loki.k8s-dashboard.svc.cluster.local:3100"
 
           # Container-level security. Container overrides the pod defaults for
           # readOnlyRootFilesystem (the app writes nothing to disk) and
@@ -256,5 +247,4 @@ spec:
               - key: config.yaml
                 path: config.yaml
         - name: audit-log-storage
-          persistentVolumeClaim:
-            claimName: audit-log-storage
+          emptyDir: {}   # ephemeral — primary audit source is PostgreSQL via AUDIT_DB_URL
