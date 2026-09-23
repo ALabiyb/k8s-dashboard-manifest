@@ -79,6 +79,11 @@ data:
             target_label:  pod
           - source_labels: [__meta_kubernetes_pod_container_name]
             target_label:  container
+          # Drop the DaemonSet revision hash — it changes on every rollout
+          # (high cardinality) and pushes istio-system pods (ztunnel,
+          # istio-cni-node) over Loki's 15-label-per-series limit.
+          - action: labeldrop
+            regex:  controller_revision_hash
           # Resolve the log file path from uid + container name.
           - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
             separator:    /
@@ -142,6 +147,8 @@ spec:
             - name: config
               mountPath: /etc/promtail
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
             - name: pods-logs
               mountPath: /var/log/pods
               readOnly: true
@@ -165,6 +172,8 @@ spec:
         - name: config
           configMap:
             name: promtail-config
+        - name: tmp
+          emptyDir: {}
         - name: pods-logs
           hostPath:
             path: /var/log/pods
