@@ -51,7 +51,7 @@ data:
     server:
       http_listen_port: 9080
       grpc_listen_port: 0
-      log_level: info
+      log_level: warn
 
     positions:
       filename: /tmp/positions.yaml
@@ -84,11 +84,16 @@ data:
           # istio-cni-node) over Loki's 15-label-per-series limit.
           - action: labeldrop
             regex:  controller_revision_hash
-          # Resolve the log file path from uid + container name.
+          # Resolve the log file path from uid + container name. Real layout is
+          # /var/log/pods/<ns>_<pod>_<uid>/<container>/<n>.log — exactly one
+          # wildcard segment before the container name and one after; an extra
+          # "/*" here would add a directory level that never exists, so the
+          # glob matches zero files (confirmed via filetarget.go debug logs:
+          # "no files matched requested path, nothing will be tailed").
           - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
             separator:    /
             target_label: __path__
-            replacement:  /var/log/pods/*$1*/*/*.log
+            replacement:  /var/log/pods/*$1/*.log
 
 ---
 # ── Promtail DaemonSet ───────────────────────────────────────────────────────
