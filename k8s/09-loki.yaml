@@ -82,7 +82,7 @@ spec:
   storageClassName: rook-ceph-block
   resources:
     requests:
-      storage: 10Gi
+      storage: 30Gi
 
 ---
 # ── Loki Deployment ───────────────────────────────────────────────────────────
