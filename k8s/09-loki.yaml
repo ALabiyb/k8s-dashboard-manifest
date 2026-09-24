@@ -99,6 +99,13 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 3
+  # Recreate, not RollingUpdate: loki-data is a ReadWriteOnce Ceph RBD PVC and
+  # this Deployment only ever runs 1 replica. RollingUpdate tries to bring up
+  # the new pod before the old one releases the volume, so the new pod's
+  # compactor hangs waiting for the RWO mount ("failed to init delete store:
+  # timeout") and crash-loops. Recreate tears down the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: loki
