@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Currently unused by the Deployment (audit-log-storage is an emptyDir there,
+# see deployment.yaml's comment) — kept as an optional PVC for anyone who
+# wants to persist the local audit.log cache instead of relying solely on
+# AUDIT_DB_URL. Disable via persistence.auditLog unless you need it.
+{{- if .Values.persistence.auditLog.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-log-storage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: audit-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.persistence.auditLog.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.auditLog.size }}
+{{- end }}

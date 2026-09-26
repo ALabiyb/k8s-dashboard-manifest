@@ -1,0 +1,44 @@
+{{/*
+---------------------------------------------------------------------------
+Author: Labiyb M. Said — DevSecOps Engineer
+Contact: saidlabiybm@gmail.com
+---------------------------------------------------------------------------
+*/}}
+k8s-dashboard has been installed into namespace "{{ .Release.Namespace }}".
+
+{{- if .Values.httpRoute.enabled }}
+It should become reachable at: http://{{ .Values.httpRoute.hostname }}
+(once the {{ .Values.httpRoute.gatewayName }}/{{ .Values.httpRoute.gatewayNamespace }}
+Gateway is configured to route to it)
+{{- else }}
+httpRoute.enabled is false — expose the "k8s-dashboard" Service (port {{ .Values.service.port }})
+however this cluster routes ingress traffic (Ingress, your own Gateway, etc).
+{{- end }}
+
+{{- if .Values.secret.create }}
+
+WARNING: secret.create=true, so admin/viewer credentials came from values.yaml
+in plain text. For anything beyond local testing, set secret.create=false and
+secret.existingSecretName to a Secret managed by Vault/External Secrets/
+sealed-secrets instead.
+{{- end }}
+
+{{- if not .Values.config.oidc.enabled }}
+
+Keycloak/OIDC SSO is disabled (config.oidc.enabled=false) — only the static
+admin/viewer credentials above will work.
+{{- end }}
+
+{{- if not .Values.loki.enabled }}
+
+loki.enabled=false — the dashboard's Logs page will be unavailable regardless
+of config.logs.enabled.
+{{- end }}
+
+{{- if .Values.k8sCollector.enabled }}
+
+The k8s-collector subchart is enabled — a DaemonSet on your control-plane
+node(s) will read /var/log/kubernetes/audit, so kube-apiserver's audit
+webhook must be configured to POST events there (or point AUDIT_DB_URL /
+this subchart's audit-collector-db Secret at your own Postgres instance).
+{{- end }}

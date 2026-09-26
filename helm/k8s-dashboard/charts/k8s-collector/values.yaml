@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Standalone defaults. When installed as a dependency of the parent
+# k8s-dashboard chart, override these under the parent values.yaml's
+# `k8sCollector:` key.
+
+# Create the target namespace. Leave true when installing this chart
+# standalone (matches the live ArgoCD Application's CreateNamespace=true);
+# set false when installed as a subchart of an umbrella release that already
+# owns the namespace.
+createNamespace: true
+
+image:
+  repository: harbor.devops.softnethq.co.tz/library/k8s-audit-collector
+  tag: "dev-3f292ad"
+  pullPolicy: Always
+
+# Collect only human user accounts by default; set false to include system
+# accounts (kube-scheduler, controller-manager, etc.) too.
+filterHumansOnly: true
+
+resources:
+  requests:
+    memory: 32Mi
+    cpu: 10m
+  limits:
+    memory: 128Mi
+    cpu: 100m
+
+# audit.log is mode 600 root:root on every control-plane node — no
+# alternative to running as UID 0 / landing only on control-plane nodes.
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+
+db:
+  # Local/dev convenience only — production should point existingSecretName
+  # at a Vault/External-Secrets-managed Secret instead of a plaintext
+  # connection string in values.
+  create: true
+  existingSecretName: ""
+  url: "postgres://CHANGE_ME_user:CHANGE_ME_password@CHANGE_ME_host:5432/CHANGE_ME_db?sslmode=require"
+
+retention:
+  enabled: true
+  schedule: "0 2 * * *"   # daily at 02:00 UTC
+  days: 90
+  image: "postgres:16-alpine"
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      memory: 64Mi
+      cpu: 100m

@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: k8s-dashboard
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: k8s-dashboard
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}

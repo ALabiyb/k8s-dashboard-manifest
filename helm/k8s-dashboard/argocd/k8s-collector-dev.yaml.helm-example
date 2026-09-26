@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# EXAMPLE ONLY — not applied by anything. Alternative to bundling k8s-collector
+# as a subchart: deploy it as its own ArgoCD Application pointed directly at
+# charts/k8s-collector, same as ../../argocd/k8s-collector-dev.yaml does today
+# against the raw k8s-collector/ folder. Use this instead of the subchart if
+# you want the collector's own release lifecycle/versioning independent of
+# the dashboard's.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-collector-dev
+  namespace: devopstools
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-health-degraded.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-pod-crash-loop.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
+spec:
+  project: default
+  source:
+    repoURL: http://192.168.15.85/kubernetes-manifest/k8s-dashboard-manifest.git
+    targetRevision: dev
+    path: helm/k8s-dashboard/charts/k8s-collector
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: createNamespace
+          value: "false"   # k8s-dashboard-dev Application already owns this namespace
+        - name: image.tag
+          value: dev-3f292ad
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8s-dashboard
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

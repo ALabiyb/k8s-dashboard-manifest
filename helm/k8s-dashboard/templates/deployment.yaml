@@ -1,0 +1,205 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: k8s-dashboard
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+spec:
+  replicas: {{ .Values.replicaCount }}   # single replica — sessions live in-memory (internal/auth/session.go)
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: k8s-dashboard
+  template:
+    metadata:
+      labels:
+        app: k8s-dashboard
+        app.kubernetes.io/name: k8s-dashboard
+        app.kubernetes.io/component: dashboard
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      terminationGracePeriodSeconds: 30
+      {{- if .Values.controlPlaneAffinity.enabled }}
+      # Pin to control-plane nodes — same tier as kube-apiserver so webhook
+      # events arrive in-process without crossing node boundaries.
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: dashboard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Bypass the image's ENTRYPOINT — it hardcodes -config /app/config/config.yaml
+          # and ignores args. Override directly so the ConfigMap mount is read.
+          command: ["/app/k8s-dashboard"]
+          args:
+            - "-config=/etc/dashboard/config.yaml"
+          env:
+            - name: MOCK_MODE
+              value: "false"
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: APP_ENV
+
+            - name: DASHBOARD_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: DASHBOARD_SECRET
+            - name: ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: ADMIN_USER
+            - name: ADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: ADMIN_PASS
+            - name: VIEWER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: VIEWER_USER
+            - name: VIEWER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: VIEWER_PASS
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: SMTP_PASSWORD
+            # EMBED_TOKEN → static secret that lets the TV iframe auto-login
+            # without a password prompt (see auth.HandleEmbed).
+            - name: EMBED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: EMBED_TOKEN
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            - name: OIDC_REDIRECT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dashboard-config
+                  key: OIDC_REDIRECT_URL
+                  optional: true
+            # Webhook receiver writes here; emptyDir keeps it writable without
+            # a RWO PVC. GET /api/audit reads from PostgreSQL (AUDIT_DB_URL)
+            # so this file is only a short-lived local cache.
+            - name: AUDIT_LOG_PATH
+              value: /var/log/audit/audit.log
+            - name: AUDIT_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-dashboard.secretName" . }}
+                  key: AUDIT_WEBHOOK_TOKEN
+                  optional: true
+            # PostgreSQL connection string for the audit table written by
+            # k8s-audit-collector. When set, GET /api/audit queries the DB
+            # instead of the local file, giving multi-node coverage.
+            - name: AUDIT_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auditDB.existingSecretName }}
+                  key: {{ .Values.auditDB.existingSecretKey }}
+            {{- if and .Values.loki.enabled .Values.config.logs.enabled }}
+            # Loki base URL — enables the Logs page (GET /api/logs/*).
+            - name: LOKI_URL
+              value: {{ include "k8s-dashboard.lokiURL" . | quote }}
+            {{- end }}
+
+          # Container-level security. Overrides pod defaults for
+          # readOnlyRootFilesystem (the app writes nothing to disk) and
+          # capabilities.drop:[ALL] (defense in depth).
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dashboard
+              readOnly: true
+            - name: audit-log-storage
+              mountPath: /var/log/audit
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          # Three probes — startupProbe (one-shot "app finished booting", generous
+          # grace period on cold start), readinessProbe (drops from Service
+          # endpoints until the first poll lands), livenessProbe (MUST use
+          # /healthz — a liveness-only endpoint; /api/summary now requires an
+          # authenticated session and would redirect probes to /login → probe
+          # fails → pod restarted in a loop).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 3
+            failureThreshold: 20    # ~60s total to become healthy
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+      volumes:
+        - name: config
+          configMap:
+            name: dashboard-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+        - name: audit-log-storage
+          emptyDir: {}   # ephemeral — primary audit source is PostgreSQL via AUDIT_DB_URL

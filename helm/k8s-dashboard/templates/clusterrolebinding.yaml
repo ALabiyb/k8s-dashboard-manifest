@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-dashboard-reader
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: k8s-dashboard-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- if .Values.rbac.platformAdminGroup }}
+---
+# Grants the platform-admin Keycloak/OIDC group full cluster-admin — matching
+# the dashboard's own superadmin role, which is meant to have every
+# capability admins have, plus Audit Log access. Group-based (not User)
+# because an OIDC username is often rendered with an issuer prefix while
+# --oidc-groups-prefix may be empty, so User-kind bindings on bare usernames
+# never match but Group-kind bindings on bare group names do.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-platform-admins-cluster-admin
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+subjects:
+  - kind: Group
+    name: {{ .Values.rbac.platformAdminGroup }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+{{- end }}

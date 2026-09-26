@@ -1,0 +1,6 @@
+dependencies:
+- name: k8s-collector
+  repository: file://charts/k8s-collector
+  version: 0.1.0
+digest: sha256:d23644bdd04ec876763b8b877509857727e71ec21dff16150a0cb517d0672915
+generated: "2026-09-26T18:31:00.350359+03:00"

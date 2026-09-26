@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# EXAMPLE ONLY — not applied by anything. Shows what ../../argocd/k8s-dashboard-dev.yaml
+# would look like pointed at this chart instead of the raw k8s/ manifests.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-dashboard-dev
+  namespace: devopstools
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-health-degraded.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-pod-crash-loop.email: lsaid@softnet.co.tz
+    notifications.argoproj.io/subscribe.on-sync-failed.email: lsaid@softnet.co.tz
+spec:
+  project: default
+  source:
+    repoURL: http://192.168.15.85/kubernetes-manifest/k8s-dashboard-manifest.git
+    targetRevision: dev
+    path: helm/k8s-dashboard
+    helm:
+      valueFiles:
+        - values.yaml
+      # Per-cluster overrides that used to live in the raw ConfigMap/Deployment —
+      # image tag, hostnames, company/branding text, OIDC — go here or in a
+      # values-dev.yaml checked in alongside this file.
+      parameters:
+        - name: image.tag
+          value: dev-3f292ad
+        - name: config.appEnv
+          value: "Development Cluster"
+        - name: httpRoute.hostname
+          value: k8s-dashboard.dev.softnethq.co.tz
+        - name: config.oidc.redirectURL
+          value: https://k8s-dashboard.dev.softnethq.co.tz/auth/callback
+        - name: config.email.dashboardURL
+          value: https://k8s-dashboard.dev.softnethq.co.tz
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8s-dashboard
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

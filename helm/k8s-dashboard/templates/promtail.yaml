@@ -1,0 +1,187 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Promtail DaemonSet — runs on every node, tails /var/log/pods/**/*.log, and
+# ships entries to the Loki instance in this namespace. Labels attached per
+# log line: namespace, pod, container (plus any k8s pod labels matching
+# __meta_kubernetes_pod_label_*).
+{{- if and .Values.promtail.enabled .Values.loki.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: promtail
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: promtail
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/proxy, services, endpoints, pods]
+    verbs:     [get, watch, list]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: promtail
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+subjects:
+  - kind:      ServiceAccount
+    name:      promtail
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind:     ClusterRole
+  name:     promtail
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ── Promtail configuration ───────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+      log_level: warn
+
+    positions:
+      filename: /tmp/positions.yaml
+
+    clients:
+      - url: {{ printf "%s/loki/api/v1/push" (include "k8s-dashboard.lokiURL" .) }}
+
+    scrape_configs:
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          - cri: {}
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Use the node the pod runs on as the host label.
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label:  __host__
+          # Carry through all k8s pod labels as Loki stream labels.
+          - action: labelmap
+            regex:  __meta_kubernetes_pod_label_(.+)
+          # Standard labels the dashboard Logs page filters on.
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label:  namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label:  pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label:  container
+          # Drop the DaemonSet revision hash — it changes on every rollout
+          # (high cardinality) and pushes some pods over Loki's per-series
+          # label limit.
+          - action: labeldrop
+            regex:  controller_revision_hash
+          # Resolve the log file path from uid + container name. Real layout is
+          # /var/log/pods/<ns>_<pod>_<uid>/<container>/<n>.log — exactly one
+          # wildcard segment before the container name and one after.
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            separator:    /
+            target_label: __path__
+            replacement:  /var/log/pods/*$1/*.log
+
+---
+# ── Promtail DaemonSet ───────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: promtail
+    app.kubernetes.io/name: promtail
+    app.kubernetes.io/component: log-collector
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: promtail
+        app.kubernetes.io/name: promtail
+    spec:
+      serviceAccountName: promtail
+      # Must run on all nodes (including control-plane) to collect logs there.
+      tolerations:
+        - key:      node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect:   NoSchedule
+      securityContext:
+        runAsUser:  0       # needs root to read /var/log/pods (mode 700, root-owned)
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: promtail
+          image: "{{ .Values.promtail.image.repository }}:{{ .Values.promtail.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          args: ["-config.file=/etc/promtail/promtail.yaml"]
+          ports:
+            - name: http
+              containerPort: 9080
+          securityContext:
+            readOnlyRootFilesystem:   true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: pods-logs
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: docker-logs
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+          resources:
+            {{- toYaml .Values.promtail.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: promtail-config
+        - name: tmp
+          emptyDir: {}
+        - name: pods-logs
+          hostPath:
+            path: /var/log/pods
+        - name: docker-logs
+          hostPath:
+            path: /var/lib/docker/containers
+{{- end }}

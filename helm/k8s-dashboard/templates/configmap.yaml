@@ -1,0 +1,71 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Mounts config.yaml into the pod. Edit values.yaml's `config:` block instead
+# of the Docker image when you want to change thresholds or SMTP settings.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-dashboard.labels" . | nindent 4 }}
+data:
+  # Injected into the HTML header.
+  APP_ENV: {{ .Values.config.appEnv | quote }}
+
+  # Per-environment override for the Keycloak OIDC redirect URL — must be
+  # registered in the OIDC client's Valid Redirect URIs.
+  OIDC_REDIRECT_URL: {{ .Values.config.oidc.redirectURL | quote }}
+
+  config.yaml: |
+    app:
+      company_name: {{ .Values.config.companyName | quote }}
+
+    server:
+      port: 8080
+      poll_interval: {{ .Values.config.pollInterval | quote }}
+
+    excluded_namespaces:
+      {{- range .Values.config.excludedNamespaces }}
+      - {{ . }}
+      {{- end }}
+
+    thresholds:
+      healthy: {{ .Values.config.thresholds.healthy }}
+      degraded: {{ .Values.config.thresholds.degraded }}
+
+    notifications:
+      email:
+        enabled: {{ .Values.config.email.enabled }}
+        smtp_host: {{ .Values.config.email.smtpHost | quote }}
+        smtp_port: {{ .Values.config.email.smtpPort }}
+        smtp_username: {{ .Values.config.email.smtpUsername | quote }}
+        # Real password is NOT stored here — it's injected at runtime via the
+        # SMTP_PASSWORD env var (see secret.yaml / values.yaml's secret.smtpPassword),
+        # which config.Load() reads and overrides this placeholder with. Never
+        # put the real value in this ConfigMap: it's plaintext, world-readable
+        # to anyone with namespace `get configmap` access, and goes straight
+        # into git/Helm release history.
+        smtp_password: "overridden-by-SMTP_PASSWORD-env-var"
+        from: {{ .Values.config.email.from | quote }}
+        from_display_name: {{ .Values.config.email.fromDisplayName | quote }}
+        to:
+          {{- range .Values.config.email.to }}
+          - {{ . | quote }}
+          {{- end }}
+        on_state_change_only: {{ .Values.config.email.onStateChangeOnly }}
+        dashboard_url: {{ .Values.config.email.dashboardURL | quote }}
+        html_body: {{ .Values.config.email.htmlBody }}
+
+    oidc:
+      enabled: {{ .Values.config.oidc.enabled }}
+      issuer_url: {{ .Values.config.oidc.issuerURL | quote }}
+      client_id: {{ .Values.config.oidc.clientID | quote }}
+      # client_secret intentionally left empty — overridden by OIDC_CLIENT_SECRET env var (Secret).
+      client_secret: ""
+      redirect_url: {{ .Values.config.oidc.redirectURL | quote }}
+      admin_group: {{ .Values.config.oidc.adminGroup | quote }}
+      superadmin_group: {{ .Values.config.oidc.superadminGroup | quote }}
+      tls_skip_verify: {{ .Values.config.oidc.tlsSkipVerify }}

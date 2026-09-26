@@ -1,0 +1,183 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Default values for the k8s-dashboard chart.
+# Resource names below (dashboard-config, dashboard-secrets, k8s-dashboard,
+# loki, promtail, ...) intentionally match the names already live on the
+# SoftNet clusters (previously deployed via raw kubectl/ArgoCD manifests) so
+# this chart is a drop-in replacement, not a rename. Override only what your
+# environment needs to differ.
+
+image:
+  repository: harbor.devops.softnethq.co.tz/k8s_dashboard/k8s-dashboard
+  # Jenkins bumps this on every build in the raw-manifest world; here it's a
+  # values override instead of a hand-edited file.
+  tag: "dev-3f292ad"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1                # single replica — sessions live in-memory (internal/auth/session.go)
+revisionHistoryLimit: 5
+
+# Pin the dashboard pod to control-plane nodes so webhook audit events arrive
+# in-process without crossing node boundaries. Disable on a cluster where
+# that isn't a requirement (e.g. a smaller/managed cluster without direct
+# control-plane scheduling access).
+controlPlaneAffinity:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    # Bumped from 128Mi — the client-go clientset (per-user token forwarder,
+    # internal/k8s/user_client.go) and the OIDC token cache push steady-state up.
+    cpu: 300m
+    memory: 256Mi
+
+service:
+  port: 80
+  targetPort: 8080
+
+# Gateway API HTTPRoute — disable on clusters without Gateway API / Istio,
+# and front the Service with an Ingress or your own routing instead.
+httpRoute:
+  enabled: true
+  gatewayName: main-gateway
+  gatewayNamespace: istio-system
+  hostname: k8s-dashboard.example.com
+
+rbac:
+  # Grants READ-ONLY cluster access to the resources the dashboard displays,
+  # plus one optional cluster-admin binding for a superadmin group (see
+  # rbac.platformAdminGroup below). Disable if RBAC is managed externally.
+  create: true
+  # Keycloak/OIDC group bound to cluster-admin (matches the dashboard's own
+  # in-app superadmin role, which expects every admin capability plus audit
+  # log access). Leave empty to skip creating this binding.
+  platformAdminGroup: ""
+
+serviceAccount:
+  create: true
+  name: "k8s-dashboard"
+
+persistence:
+  auditLog:
+    # Currently unused by the Deployment (it mounts an emptyDir instead — see
+    # deployment.yaml's comment); kept disabled by default to match that.
+    # Enable only if you want to persist the local audit.log cache instead of
+    # relying solely on auditDB.
+    enabled: false
+    # StorageClass must support ReadWriteOnce — single replica, so RWO is enough.
+    storageClassName: rook-ceph-block
+    size: 2Gi
+
+config:
+  # Shown in the dashboard's HTML header badge (e.g. "Development Cluster" /
+  # "Production Cluster").
+  appEnv: "Development Cluster"
+  companyName: "Your Company"
+  pollInterval: 30s
+  excludedNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+    - default
+  thresholds:
+    healthy: 100
+    degraded: 70
+
+  email:
+    enabled: false
+    smtpHost: "smtp.example.com"
+    smtpPort: 587
+    smtpUsername: "alerts@example.com"
+    from: "alerts@example.com"
+    # Display name shown by mail clients as the sender. Envelope stays a bare
+    # address — some providers (e.g. Zoho) reject envelopes with display names.
+    fromDisplayName: "K8s Dashboard"
+    to: []
+    onStateChangeOnly: true
+    dashboardURL: "https://k8s-dashboard.example.com"
+    htmlBody: true
+
+  oidc:
+    enabled: false
+    issuerURL: ""
+    clientID: "k8s-dashboard"
+    redirectURL: ""
+    adminGroup: ""
+    superadminGroup: ""
+    tlsSkipVerify: false
+
+  # Loki base URL for the in-app Logs page. Leave enabled: false to hide the
+  # Logs page entirely on a cluster without the bundled Loki (loki.enabled: false).
+  logs:
+    enabled: true
+
+# Secret values below are for local/dev convenience only. In production, set
+# secret.create: false and secret.existingSecretName to a Secret managed by
+# Vault/External Secrets/sealed-secrets instead — these values land in plain
+# values files and Helm release state otherwise.
+secret:
+  create: true
+  existingSecretName: ""
+  dashboardSecret: "change-me-session-signing-key"
+  adminUser: "admin"
+  adminPass: "change-me"
+  viewerUser: "viewer"
+  viewerPass: "change-me"
+  smtpPassword: ""
+  embedToken: "change-me-embed-token"
+  oidcClientSecret: ""
+  auditWebhookToken: ""
+
+# Postgres connection string for the audit trail (queried by GET /api/audit).
+# By default this points at the Secret the k8sCollector subchart creates
+# (audit-collector-db / key "url"). Set existingSecretName if you manage
+# Postgres + its credentials outside this chart.
+auditDB:
+  existingSecretName: "audit-collector-db"
+  existingSecretKey: "url"
+
+# Bundled single-binary Loki, feeding the dashboard's Logs page.
+loki:
+  enabled: true
+  image:
+    repository: grafana/loki
+    tag: "3.5.1"
+  # Live SoftNet clusters run 100Gi after repeatedly filling a smaller PVC —
+  # default lower here for a fresh install; size up if you expect similar
+  # cluster-wide log volume.
+  persistence:
+    storageClassName: rook-ceph-block
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 1536Mi
+  retentionPeriod: 168h   # 7 days
+
+# Bundled Promtail DaemonSet, tailing every node's /var/log/pods into Loki.
+promtail:
+  enabled: true
+  image:
+    repository: grafana/promtail
+    tag: "3.5.1"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# k8s-audit-collector subchart — control-plane DaemonSet + retention CronJob
+# that feeds the audit trail this dashboard reads via auditDB above. Disable
+# if you already run your own collector, or don't need the Audit Log page.
+k8sCollector:
+  enabled: true

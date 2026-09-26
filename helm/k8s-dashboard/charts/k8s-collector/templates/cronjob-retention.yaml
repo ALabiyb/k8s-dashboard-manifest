@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Author: Labiyb M. Said — DevSecOps Engineer
+# Contact: saidlabiybm@gmail.com
+# ---------------------------------------------------------------------------
+# Deletes audit rows older than retention.days to keep the table bounded.
+{{- if .Values.retention.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-retention
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: audit-retention
+    {{- include "k8s-collector.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.retention.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: psql
+              image: {{ .Values.retention.image | quote }}
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "k8s-collector.dbSecretName" . }}
+                      key: url
+                - name: RETENTION_DAYS
+                  value: {{ .Values.retention.days | quote }}
+              command:
+                - sh
+                - -c
+                - |
+                  psql "$DATABASE_URL" -c \
+                    "DELETE FROM k8s_audit WHERE event_time < now() - make_interval(days => $RETENTION_DAYS::int);" \
+                    -c "SELECT count(*) AS remaining_rows FROM k8s_audit;"
+              resources:
+                {{- toYaml .Values.retention.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 70
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}
