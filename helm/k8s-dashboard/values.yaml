@@ -120,16 +120,25 @@ config:
 # secret.create: false and secret.existingSecretName to a Secret managed by
 # Vault/External Secrets/sealed-secrets instead — these values land in plain
 # values files and Helm release state otherwise.
+#
+# adminUser/adminPass/viewerUser/viewerPass are left blank on purpose: the
+# app itself falls back to admin/admin and viewer/viewer when these env vars
+# are unset, WITH a "default credentials in use" warning logged - setting a
+# fixed placeholder here (even "change-me") would silently become the real
+# password and suppress that warning. Set these explicitly for anything
+# beyond a quick local eval. dashboardSecret/embedToken/auditWebhookToken
+# are pure random tokens auto-generated on first install if left blank (see
+# the stableSecret helper) - no need to set them by hand.
 secret:
   create: true
   existingSecretName: ""
-  dashboardSecret: "change-me-session-signing-key"
-  adminUser: "admin"
-  adminPass: "change-me"
-  viewerUser: "viewer"
-  viewerPass: "change-me"
+  dashboardSecret: ""
+  adminUser: ""
+  adminPass: ""
+  viewerUser: ""
+  viewerPass: ""
   smtpPassword: ""
-  embedToken: "change-me-embed-token"
+  embedToken: ""
   oidcClientSecret: ""
   auditWebhookToken: ""
 

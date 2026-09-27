@@ -35,3 +35,26 @@ etc — either the one this chart creates, or an existing one the caller points 
 dashboard-secrets
 {{- end -}}
 {{- end -}}
+
+{{/*
+Generates a stable random secret value: if the value is set explicitly in
+values, use it; otherwise reuse whatever's already in the live Secret (so
+"helm upgrade" never rotates it and silently invalidates every session /
+audit-webhook caller); otherwise generate a fresh random one for a first
+install. `lookup` returns empty during `helm template`/`--dry-run=client`
+(no cluster context), which is fine - that path is preview-only anyway.
+Usage: {{ include "k8s-dashboard.stableSecret" (dict "root" . "value" .Values.secret.dashboardSecret "key" "DASHBOARD_SECRET" "length" 32) }}
+*/}}
+{{- define "k8s-dashboard.stableSecret" -}}
+{{- $root := .root -}}
+{{- if .value -}}
+{{- .value -}}
+{{- else -}}
+{{- $existing := lookup "v1" "Secret" $root.Release.Namespace (include "k8s-dashboard.secretName" $root) -}}
+{{- if and $existing $existing.data (index $existing.data .key) -}}
+{{- index $existing.data .key | b64dec -}}
+{{- else -}}
+{{- randAlphaNum (.length | int) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

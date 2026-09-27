@@ -15,12 +15,20 @@ httpRoute.enabled is false — expose the "k8s-dashboard" Service (port {{ .Valu
 however this cluster routes ingress traffic (Ingress, your own Gateway, etc).
 {{- end }}
 
+{{- if and .Values.secret.create (not .Values.secret.adminPass) }}
+
+secret.adminPass is blank — the app falls back to its own built-in default
+(admin/admin, viewer/viewer) and logs a "default credentials in use"
+warning on every startup. Fine for a quick eval; set secret.adminUser/
+adminPass/viewerUser/viewerPass explicitly for anything real.
+{{- end }}
+
 {{- if .Values.secret.create }}
 
-WARNING: secret.create=true, so admin/viewer credentials came from values.yaml
-in plain text. For anything beyond local testing, set secret.create=false and
-secret.existingSecretName to a Secret managed by Vault/External Secrets/
-sealed-secrets instead.
+WARNING: secret.create=true, so these credentials came from values.yaml in
+plain text (lands in Helm release state). For anything beyond local
+testing, set secret.create=false and secret.existingSecretName to a Secret
+managed by Vault/External Secrets/sealed-secrets instead.
 {{- end }}
 
 {{- if not .Values.config.oidc.enabled }}
